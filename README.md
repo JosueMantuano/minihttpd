@@ -1,50 +1,147 @@
-# Minihttpd
+# MiniHTTPd
 
-Servidor HTTP mínimo en C para servir archivos estáticos desde `www/`.
+Servidor HTTP básico desarrollado en C para Linux. MiniHTTPd atiende múltiples
+clientes mediante `epoll`, sirve archivos estáticos desde `www/` y procesa
+solicitudes `GET` de HTTP/1.1 sin utilizar bibliotecas HTTP externas.
 
-# Funcionamiento
-epoll_wait espera eventos. Si el socket de escucha está listo, se aceptan los clientes pendientes (accept), cada uno se pone en modo no bloqueante y se registra en epoll.
-Cuando un cliente tiene datos, recv los guarda en su buffer. TCP no respeta límites de mensaje, así que los bytes se acumulan hasta encontrar \r\n\r\n.
-http_parse_request analiza la petición. Si faltan datos, se espera a que lleguen más.
-Si el método es GET, files_open resuelve y abre el archivo, y mime_type_for_path elige el Content-Type.
-Se envía la cabecera con send y el archivo con sendfile. Si el socket se llena (EAGAIN), el cliente pasa a esperar EPOLLOUT y la respuesta continúa donde se quedó, sin bloquear a los demás.
-Con conexión persistente el socket sigue abierto esperando otra petición; si no, se cierra.
-epoll se usa en modo level-triggered (el predeterminado): epoll_wait avisa mientras haya datos por leer o espacio para escribir.
+## Características
 
-## Uso
+- Servidor TCP con sockets no bloqueantes.
+- Multiplexación de conexiones mediante `epoll`.
+- Conexiones HTTP persistentes.
+- Procesamiento del método `GET`.
+- Encabezados `Host`, `Connection` y `User-Agent`.
+- Respuestas `200`, `400`, `403`, `404`, `405` y `500`.
+- Tipos MIME para HTML, CSS, JavaScript, PNG y JPG.
+- Protección de rutas con percent-decoding y `realpath()`.
+- Límites de tamaño para solicitudes, URI y encabezados.
+- Envío de archivos con `sendfile()` y manejo de escrituras parciales.
+
+## Requisitos
+
+- Ubuntu 24.04 o una distribución Linux compatible.
+- Compilador C compatible con C11.
+- Utilidades básicas de compilación.
+
+## Estructura
+
+```text
+minihttpd/
+├── Makefile
+├── README.md
+├── include/
+│   ├── files.h
+│   ├── http.h
+│   ├── mime.h
+│   └── server.h
+├── src/
+│   ├── files.c
+│   ├── http.c
+│   ├── main.c
+│   ├── mime.c
+│   └── server.c
+└── www/
+    ├── index.html
+    ├── style.css
+    └── image.png
+```
+
+- `main.c`: bucle de eventos `epoll`, clientes y envío de respuestas.
+- `server.c`: creación del socket TCP y configuración no bloqueante.
+- `http.c`: análisis de solicitudes y construcción de respuestas HTTP.
+- `files.c`: resolución segura y apertura de archivos estáticos.
+- `mime.c`: selección del tipo de contenido según la extensión.
+
+## Compilación
+
+Desde la carpeta del proyecto:
+
 ```sh
-make 
+make
+```
+
+Para recompilar todos los archivos:
+
+```sh
+make -B
+```
+
+Para eliminar el ejecutable y los archivos objeto:
+
+```sh
+make clean
+```
+
+## Ejecución
+
+```sh
 ./minihttpd 8080
 ```
+
 ## Pruebas
-U=http://127.0.0.1:8080
 
-curl -i  $U/                     # 200 text/html
-curl -i  $U/style.css            # 200 text/css
-curl -I  $U/image.png            # 200 image/png
-curl -i  $U/no-existe            # 404
-curl -i -X POST $U/              # 405 con "Allow: GET"
-# abrir 3 conexiones y pedir un archivo por una de ellas -> 500
-(ulimit -n 8; ./minihttpd 8080 &)
-# Directory traversal (--path-as-is evita que curl simplifique los "..")
-curl -i --path-as-is $U/../../../../../../../../../../../../etc/passwd   # 403
-curl -i --path-as-is $U/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd   # 403
-
-# Peticiones inválidas -> 400
-printf 'GET / HTTP/1.1\r\n\r\n' | nc 127.0.0.1 8080                      # falta Host
-printf 'GET / HTTP/2.0\r\nHost: x\r\n\r\n' | nc 127.0.0.1 8080          # versión no soportada
-curl -i "$U/%00"                                                          # byte nulo
-curl -i "$U/$(python3 -c 'print("a"*3000)')"                              # URI demasiado larga
-
-# Conexión persistente: segunda petición en la misma conexión
-curl -v $U/ $U/style.css 2>&1 | grep "Re-using"
-
-# Tipos MIME
-Extensión	Content-Type
-.html	text/html
-.css	text/css
-.js	application/javascript
-.png	image/png
-.jpg	image/jpeg
-otra o sin extensión	application/octet-stream
+```sh
+curl -i http://127.0.0.1:8080/
+curl -i http://127.0.0.1:8080/style.css
+curl -i http://127.0.0.1:8080/image.png
+curl -i http://127.0.0.1:8080/archivo-inexistente
+curl -i -X POST http://127.0.0.1:8080/
 ```
+
+Respuestas esperadas:
+
+| Solicitud | Respuesta |
+| --- | --- |
+| Página principal | `200 OK` |
+| CSS | `200 OK`, `text/css` |
+| PNG | `200 OK`, `image/png` |
+| Archivo inexistente | `404 Not Found` |
+| Método distinto de `GET` | `405 Method Not Allowed` |
+
+```sh
+curl -i --path-as-is \
+  http://127.0.0.1:8080/../../../../etc/passwd
+```
+
+Una ruta que intenta salir de `www/` debe responder `403 Forbidden`.
+
+Para probar una solicitud incompleta:
+
+```sh
+printf 'GET / HTTP/1.1\r\n\r\n' | nc 127.0.0.1 8080
+```
+
+Una solicitud HTTP/1.1 sin `Host` debe responder `400 Bad Request`.
+
+## Tipos MIME
+
+| Extensión | Tipo de contenido |
+| --- | --- |
+| `.html` | `text/html` |
+| `.css` | `text/css` |
+| `.js` | `application/javascript` |
+| `.png` | `image/png` |
+| `.jpg` | `image/jpeg` |
+| Otra o sin extensión | `application/octet-stream` |
+
+## Funcionamiento
+
+El socket de escucha se registra en `epoll`. Cuando hay conexiones pendientes,
+el servidor las acepta y las convierte en sockets no bloqueantes.
+
+Cada cliente conserva su propio estado y buffer de entrada. Los bytes recibidos
+se mantienen hasta encontrar una solicitud completa. El parser verifica la línea
+de solicitud, los encabezados básicos, el método y los límites configurados.
+
+Las respuestas se guardan en buffers por cliente. Los encabezados y los archivos
+se pueden enviar en varias operaciones si el socket no admite todos los bytes de
+una vez. Una respuesta puede continuar cuando epoll informa disponibilidad de
+escritura, sin bloquear a los demás clientes.
+
+## Seguridad
+
+El servidor limita el tamaño de las solicitudes y rechaza URI, encabezados o
+solicitudes mal formadas. Solo acepta `GET`.
+
+Las rutas públicas se resuelven desde `www/` y se comprueba que el archivo
+final permanezca dentro de esa raíz mediante `realpath()`. 
