@@ -1,9 +1,9 @@
 CC ?= cc
-CPPFLAGS += -Iinclude -D_POSIX_C_SOURCE=200809L
+CPPFLAGS += -Iinclude -D_GNU_SOURCE
 CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic
 
 TARGET = minihttpd
-OBJECTS = src/main.o src/server.o
+OBJECTS = src/main.o src/server.o src/http.o src/files.o src/mime.o
 
 .PHONY: all clean
 
