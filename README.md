@@ -66,18 +66,11 @@ Para recompilar todos los archivos:
 make -B
 ```
 
-Para eliminar el ejecutable y los archivos objeto:
-
-```sh
-make clean
-```
-
 ## Ejecución
 
 ```sh
 ./minihttpd 8080
 ```
-
 ## Pruebas
 
 ```sh
@@ -126,16 +119,16 @@ Una solicitud HTTP/1.1 sin `Host` debe responder `400 Bad Request`.
 
 ## Funcionamiento
 
-El socket de escucha se registra en `epoll`. Cuando hay conexiones pendientes,
+El socket de escucha se registra en `epoll` cuando hay conexiones pendientes,
 el servidor las acepta y las convierte en sockets no bloqueantes.
 
 Cada cliente conserva su propio estado y buffer de entrada. Los bytes recibidos
-se mantienen hasta encontrar una solicitud completa. El parser verifica la línea
+se mantienen hasta encontrar una solicitud completa, el parser verifica la línea
 de solicitud, los encabezados básicos, el método y los límites configurados.
 
-Las respuestas se guardan en buffers por cliente. Los encabezados y los archivos
+Las respuestas se guardan en buffers por cliente, los encabezados y los archivos
 se pueden enviar en varias operaciones si el socket no admite todos los bytes de
-una vez. Una respuesta puede continuar cuando epoll informa disponibilidad de
+una vez, una respuesta puede continuar cuando epoll informa disponibilidad de
 escritura, sin bloquear a los demás clientes.
 
 ## Seguridad
