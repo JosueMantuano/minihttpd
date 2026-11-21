@@ -1,4 +1,4 @@
-# minihttpd
+# Minihttpd
 
 Servidor HTTP mínimo en C para servir archivos estáticos desde `www/`.
 
